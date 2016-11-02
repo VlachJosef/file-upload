@@ -17,7 +17,6 @@
 package uk.gov.hmrc.fileupload.controllers
 
 import cats.data.Xor
-import play.api.Logger
 import play.api.libs.json._
 import play.api.mvc._
 import uk.gov.hmrc.fileupload.read.envelope.Envelope
@@ -27,7 +26,6 @@ import uk.gov.hmrc.fileupload.utils.JsonUtils.jsonBodyParser
 import uk.gov.hmrc.fileupload.write.envelope._
 import uk.gov.hmrc.fileupload.write.infrastructure._
 import uk.gov.hmrc.fileupload.{EnvelopeId, FileId, _}
-import uk.gov.hmrc.play.microservice.controller.BaseController
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.postfixOps
@@ -37,7 +35,7 @@ class EnvelopeController(nextId: () => EnvelopeId,
                          findEnvelope: EnvelopeId => Future[Xor[FindError, Envelope]],
                          findMetadata: (EnvelopeId, FileId) => Future[Xor[FindMetadataError, read.envelope.File]],
                          findAllInProgressFile: () => Future[GetInProgressFileResult])
-                        (implicit executionContext: ExecutionContext) extends BaseController {
+                        (implicit executionContext: ExecutionContext) extends Controller {
 
   def create() = Action.async(jsonBodyParser[CreateEnvelopeRequest]) { implicit request =>
     def envelopeLocation = (id: EnvelopeId) => LOCATION -> s"${ request.host }${ routes.EnvelopeController.show(id) }"
