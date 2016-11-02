@@ -53,7 +53,8 @@ class FileController(uploadBodyParser: (EnvelopeId, FileId, FileRefId) => BodyPa
         case Xor.Right(FileFound(filename, length, data)) =>
           Ok.feed(data).withHeaders(
             CONTENT_LENGTH -> s"${ length }",
-            CONTENT_DISPOSITION -> s"""attachment; filename="${ filename.getOrElse("data") }""""
+            CONTENT_DISPOSITION -> s"""attachment; filename="${ filename.getOrElse("data") }"""",
+            CONTENT_TYPE -> "application/octet-stream"
           )
         case Xor.Left(GetFileNotFoundError) =>
           ExceptionHandler(NOT_FOUND, s"File with id: $fileId not found in envelope: $id")
