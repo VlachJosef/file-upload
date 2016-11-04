@@ -11,5 +11,5 @@
 
 POST        /file-upload/test-only/clear-collections                    uk.gov.hmrc.fileupload.testonly.impl.TestOnlyController.clearCollections
 
-# Add all the application routes to the prod.routes file
-->          /                                           prod.Routes
+# Add all the application routes to the hmrc.prod.routes file
+->          /                                           uk.gov.hmrc.fileupload.prod.Routes

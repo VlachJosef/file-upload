@@ -26,18 +26,6 @@ import uk.gov.hmrc.fileupload.write.infrastructure.MongoEventStore
 
 import scala.concurrent.{ExecutionContext, Future}
 
-package object impl {
-
-  import play.api.libs.concurrent.Execution.Implicits._
-
-  object TestOnlyController extends TestOnlyController(
-    MicroserviceGlobal.removeAllFiles,
-    MicroserviceGlobal.removeAllEnvelopes,
-    MicroserviceGlobal.eventStore,
-    MicroserviceGlobal.statsRepository)
-
-}
-
 class TestOnlyController(removeAllFiles: () => Future[List[WriteResult]], removeAllEnvelopes: () => Future[WriteResult],
                          mongoEventStore: MongoEventStore, inProgressRepository: InProgressRepository)
                         (implicit executionContext: ExecutionContext) {

@@ -23,11 +23,13 @@ import akka.stream.{ActorMaterializer, Materializer}
 import com.typesafe.config.Config
 import net.ceedubs.ficus.Ficus._
 import org.joda.time.Duration
+import play.api.ApplicationLoader.Context
 import play.api.libs.concurrent.Akka
 import play.api.libs.concurrent.Execution.Implicits._
 import play.api.mvc.{EssentialFilter, RequestHeader, Result}
-import play.api.{Application, Configuration, Logger, Play}
+import play.api._
 import reactivemongo.api.commands
+import play.api.routing.Router
 import uk.gov.hmrc.fileupload.controllers._
 import uk.gov.hmrc.fileupload.controllers.routing.RoutingController
 import uk.gov.hmrc.fileupload.controllers.transfer.TransferController
@@ -48,8 +50,33 @@ import uk.gov.hmrc.play.config.{AppName, ControllerConfig, RunMode}
 import uk.gov.hmrc.play.http.BadRequestException
 import uk.gov.hmrc.play.http.logging.filters.LoggingFilter
 import uk.gov.hmrc.play.microservice.bootstrap.DefaultMicroserviceGlobal
+import uk.gov.hmrc.fileupload.app.{Routes => AppRoutes}
+import uk.gov.hmrc.fileupload.prod.{Routes => ProdRoutes}
+import uk.gov.hmrc.fileupload.transfer.{Routes => TransferRoutes}
+import uk.gov.hmrc.fileupload.routing.{Routes => RoutingRoutes}
+import uk.gov.hmrc.fileupload.admin.{Routes => AdminRoutes}
+
+
 
 import scala.concurrent.{ExecutionContext, Future}
+
+class ApplicationLoader extends play.api.ApplicationLoader {
+  def load(context: Context) = {
+    (new BuiltInComponentsFromContext(context) with ApplicationModule).application
+  }
+}
+
+trait ApplicationModule extends BuiltInComponents {
+
+  val appRoutes = new AppRoutes(httpErrorHandler, MicroserviceGlobal.envelopeController, MicroserviceGlobal.fileController, MicroserviceGlobal.eventController)
+
+  val transferRoutes = new TransferRoutes(httpErrorHandler, MicroserviceGlobal.transferController)
+  val routingRoutes = new RoutingRoutes(httpErrorHandler, MicroserviceGlobal.routingController)
+  val healthRoutes = new health.Routes()
+  val adminRoutes = new AdminRoutes(httpErrorHandler)
+  lazy val router: Router = new prod.Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes, healthRoutes, adminRoutes)
+
+}
 
 object ControllerConfiguration extends ControllerConfig {
   lazy val controllerConfigs = Play.current.configuration.underlying.as[Config]("controllers")
@@ -144,15 +171,48 @@ object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
         publishAllEvents = createReportHandler.handle(replay = false))(eventStore, defaultContext).handleCommand(command)
   }
 
-  import play.api.libs.concurrent.Execution.Implicits._
-  val uploadBodyParser = UploadParser.parse(iterateeForUpload) _
+  lazy val envelopeController = {
+    val nextId = () => EnvelopeId(UUID.randomUUID().toString)
+    new EnvelopeController(
+      withBasicAuth = withBasicAuth,
+      nextId = nextId,
+      handleCommand = envelopeCommandHandler,
+      findEnvelope = find,
+      findMetadata = findMetadata,
+      findAllInProgressFile = allInProgressFile )
+  }
 
-  val getEnvelopesByDestination = envelopeRepository.getByDestination _
-  val zipEnvelope = Zippy.zipEnvelope(find, retrieveFile) _
+  lazy val eventController = {
+    new EventController(envelopeCommandHandler, eventStore.unitsOfWorkForAggregate, createReportHandler.handle(replay = true))
+  }
 
-  val removeAllEnvelopes = () => envelopeRepository.removeAll()
-  val removeAllFiles = () => fileRepository.clear(Duration.ZERO)
+  lazy val fileController = {
+    import play.api.libs.concurrent.Execution.Implicits._
+    val uploadBodyParser = UploadParser.parse(iterateeForUpload) _
+    new FileController(
+      withBasicAuth = withBasicAuth,
+      uploadBodyParser = uploadBodyParser,
+      retrieveFile = retrieveFile,
+      withValidEnvelope = withValidEnvelope,
+      handleCommand = envelopeCommandHandler,
+      clear = fileRepository.clear() _)
+  }
 
+  lazy val transferController = {
+    val getEnvelopesByDestination = envelopeRepository.getByDestination _
+    val zipEnvelope = Zippy.zipEnvelope(find, retrieveFile) _
+    new TransferController(withBasicAuth, getEnvelopesByDestination, envelopeCommandHandler, zipEnvelope)
+  }
+
+  lazy val testOnlyController = {
+    val removeAllEnvelopes = () => envelopeRepository.removeAll()
+    val removeAllFiles = () => fileRepository.clear(Duration.ZERO)
+    new TestOnlyController(removeAllFiles, removeAllEnvelopes, eventStore, statsRepository)
+  }
+
+  lazy val routingController = {
+    new RoutingController(envelopeCommandHandler)
+  }
 
   def basicAuthConfiguration(config: Configuration): BasicAuthConfiguration = {
     def getUsers(config: Configuration): List[User] = {
