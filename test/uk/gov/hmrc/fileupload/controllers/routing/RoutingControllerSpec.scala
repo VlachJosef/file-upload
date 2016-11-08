@@ -24,12 +24,12 @@ import play.api.libs.json.Json
 import play.api.test.FakeRequest
 import uk.gov.hmrc.fileupload.write.envelope._
 import uk.gov.hmrc.fileupload.write.infrastructure.{CommandAccepted, CommandNotAccepted}
-import uk.gov.hmrc.fileupload.{EnvelopeId, FileId}
-import uk.gov.hmrc.play.test.{UnitSpec, WithFakeApplication}
+import uk.gov.hmrc.fileupload.{EnvelopeId, FileId, WithApplicationComponents}
+import uk.gov.hmrc.play.test.UnitSpec
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class RoutingControllerSpec extends UnitSpec with WithFakeApplication with ScalaFutures {
+class RoutingControllerSpec extends UnitSpec with WithApplicationComponents with ScalaFutures {
 
   implicit val ec = ExecutionContext.global
   import uk.gov.hmrc.fileupload.Support.StreamImplicits.materializer
@@ -53,7 +53,7 @@ class RoutingControllerSpec extends UnitSpec with WithFakeApplication with Scala
       val result = controller.createRoutingRequest()(validRequest).futureValue
 
       result.header.status shouldBe Status.CREATED
-      result.header.headers(LOCATION) shouldBe uk.gov.hmrc.fileupload.controllers.routing.impl.routes.RoutingController.routingStatus(routingRequestId).url
+      result.header.headers(LOCATION) shouldBe uk.gov.hmrc.fileupload.controllers.routing.routes.RoutingController.routingStatus(routingRequestId).url
     }
     "return 400 bad request if envelope already routed" in {
       val controller = newController(handleCommand = _ => Future.successful(

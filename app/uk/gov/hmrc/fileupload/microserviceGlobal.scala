@@ -17,29 +17,34 @@
 package uk.gov.hmrc.fileupload
 
 import java.util.UUID
+import javax.inject.Provider
 
 import akka.actor.ActorRef
-import akka.stream.{ActorMaterializer, Materializer}
+import com.kenshoo.play.metrics.MetricsController
 import com.typesafe.config.Config
 import net.ceedubs.ficus.Ficus._
 import org.joda.time.Duration
 import play.api.ApplicationLoader.Context
-import play.api.libs.concurrent.Akka
+import play.api._
 import play.api.libs.concurrent.Execution.Implicits._
 import play.api.mvc.{EssentialFilter, RequestHeader, Result}
-import play.api._
-import reactivemongo.api.commands
 import play.api.routing.Router
+import reactivemongo.api.commands
+import uk.gov.hmrc.fileupload.admin.{Routes => AdminRoutes}
+import uk.gov.hmrc.fileupload.app.{Routes => AppRoutes}
 import uk.gov.hmrc.fileupload.controllers._
 import uk.gov.hmrc.fileupload.controllers.routing.RoutingController
 import uk.gov.hmrc.fileupload.controllers.transfer.TransferController
 import uk.gov.hmrc.fileupload.file.zip.Zippy
 import uk.gov.hmrc.fileupload.infrastructure._
+import uk.gov.hmrc.fileupload.prod.Routes
 import uk.gov.hmrc.fileupload.read.envelope.{WithValidEnvelope, Service => EnvelopeService, _}
 import uk.gov.hmrc.fileupload.read.file.{Service => FileService}
 import uk.gov.hmrc.fileupload.read.notifier.{NotifierActor, NotifierRepository}
 import uk.gov.hmrc.fileupload.read.stats.{Stats, StatsActor}
+import uk.gov.hmrc.fileupload.routing.{Routes => RoutingRoutes}
 import uk.gov.hmrc.fileupload.testonly.TestOnlyController
+import uk.gov.hmrc.fileupload.transfer.{Routes => TransferRoutes}
 import uk.gov.hmrc.fileupload.write.envelope._
 import uk.gov.hmrc.fileupload.write.infrastructure.UnitOfWorkSerializer.{UnitOfWorkReader, UnitOfWorkWriter}
 import uk.gov.hmrc.fileupload.write.infrastructure.{Aggregate, MongoEventStore, StreamId}
@@ -47,34 +52,34 @@ import uk.gov.hmrc.play.audit.filters.AuditFilter
 import uk.gov.hmrc.play.auth.controllers.AuthParamsControllerConfig
 import uk.gov.hmrc.play.auth.microservice.filters.AuthorisationFilter
 import uk.gov.hmrc.play.config.{AppName, ControllerConfig, RunMode}
+import uk.gov.hmrc.play.graphite.GraphiteMetricsImpl
 import uk.gov.hmrc.play.http.BadRequestException
 import uk.gov.hmrc.play.http.logging.filters.LoggingFilter
 import uk.gov.hmrc.play.microservice.bootstrap.DefaultMicroserviceGlobal
-import uk.gov.hmrc.fileupload.app.{Routes => AppRoutes}
-import uk.gov.hmrc.fileupload.prod.{Routes => ProdRoutes}
-import uk.gov.hmrc.fileupload.transfer.{Routes => TransferRoutes}
-import uk.gov.hmrc.fileupload.routing.{Routes => RoutingRoutes}
-import uk.gov.hmrc.fileupload.admin.{Routes => AdminRoutes}
-
-
 
 import scala.concurrent.{ExecutionContext, Future}
 
 class ApplicationLoader extends play.api.ApplicationLoader {
   def load(context: Context) = {
-    (new BuiltInComponentsFromContext(context) with ApplicationModule).application
+    new ApplicationModule(context).application
   }
 }
 
-trait ApplicationModule extends BuiltInComponents {
+class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(context) {
 
-  val appRoutes = new AppRoutes(httpErrorHandler, MicroserviceGlobal.envelopeController, MicroserviceGlobal.fileController, MicroserviceGlobal.eventController)
+  val appRoutes = new AppRoutes(httpErrorHandler, MicroserviceGlobal.envelopeController,
+    MicroserviceGlobal.fileController, MicroserviceGlobal.eventController)
 
   val transferRoutes = new TransferRoutes(httpErrorHandler, MicroserviceGlobal.transferController)
   val routingRoutes = new RoutingRoutes(httpErrorHandler, MicroserviceGlobal.routingController)
   val healthRoutes = new health.Routes()
-  val adminRoutes = new AdminRoutes(httpErrorHandler)
-  lazy val router: Router = new prod.Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes, healthRoutes, adminRoutes)
+  lazy val metricsController = new MetricsController(new GraphiteMetricsImpl(applicationLifecycle, configuration))
+  val adminRoutes = new AdminRoutes(httpErrorHandler, new Provider[MetricsController] {
+    override def get(): MetricsController = metricsController
+  })
+
+  lazy val router: Router = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
+    healthRoutes, adminRoutes)
 
 }
 

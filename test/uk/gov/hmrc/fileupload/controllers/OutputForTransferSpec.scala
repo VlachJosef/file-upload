@@ -21,10 +21,10 @@ import play.api.http.HeaderNames
 import play.api.libs.json.Json
 import play.api.test.FakeRequest
 import uk.gov.hmrc.fileupload.read.envelope._
-import uk.gov.hmrc.fileupload.{FileId, FileRefId, Support}
+import uk.gov.hmrc.fileupload._
 import uk.gov.hmrc.play.test.{UnitSpec, WithFakeApplication}
 
-class OutputForTransferSpec extends UnitSpec with WithFakeApplication {
+class OutputForTransferSpec extends UnitSpec with WithApplicationComponents {
 
   "Presenting individual files" should {
     "include all fields if values are present" in {

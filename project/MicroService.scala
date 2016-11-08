@@ -1,3 +1,4 @@
+import play.routes.compiler.InjectedRoutesGenerator
 import play.sbt.PlayImport.PlayKeys
 import play.sbt.routes.RoutesKeys.routesGenerator
 import sbt.Keys._
@@ -52,7 +53,8 @@ trait MicroService {
       // be raised from some Play generated code with paramaterised URL paths.
       // https://gitter.im/playframework/playframework/archives/2015/07/06
       // https://issues.scala-lang.org/browse/SI-9314
-      scalacOptions += "-Xlint:-missing-interpolator,_"
+      scalacOptions += "-Xlint:-missing-interpolator,_",
+      routesGenerator := InjectedRoutesGenerator
     )
     .configs(IntegrationTest)
     .settings(inConfig(IntegrationTest)(Defaults.itSettings): _*)

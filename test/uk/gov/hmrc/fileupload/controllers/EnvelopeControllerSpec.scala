@@ -31,11 +31,11 @@ import uk.gov.hmrc.fileupload.read.envelope.{Envelope, File, FileStatusQuarantin
 import uk.gov.hmrc.fileupload.read.stats.Stats._
 import uk.gov.hmrc.fileupload.write.envelope.{EnvelopeCommand, EnvelopeNotFoundError}
 import uk.gov.hmrc.fileupload.write.infrastructure.{CommandAccepted, CommandNotAccepted}
-import uk.gov.hmrc.play.test.{UnitSpec, WithFakeApplication}
+import uk.gov.hmrc.play.test.UnitSpec
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class EnvelopeControllerSpec extends UnitSpec with WithFakeApplication with ScalaFutures {
+class EnvelopeControllerSpec extends UnitSpec with WithApplicationComponents with ScalaFutures {
 
   import Support._
 
@@ -69,7 +69,7 @@ class EnvelopeControllerSpec extends UnitSpec with WithFakeApplication with Scal
 
       result.header.status shouldBe Status.CREATED
 	    val location = result.header.headers("Location")
-	    location shouldBe s"$serverUrl${uk.gov.hmrc.fileupload.controllers.envelope.routes.EnvelopeController.show(EnvelopeId("abc-def")).url}"
+	    location shouldBe s"$serverUrl${uk.gov.hmrc.fileupload.controllers.routes.EnvelopeController.show(EnvelopeId("abc-def")).url}"
     }
   }
 
@@ -86,7 +86,7 @@ class EnvelopeControllerSpec extends UnitSpec with WithFakeApplication with Scal
 
       result.header.status shouldBe Status.CREATED
       val location = result.header.headers("Location")
-      location shouldBe s"$serverUrl${uk.gov.hmrc.fileupload.controllers.envelope.routes.EnvelopeController.show(EnvelopeId("abc-def")).url}"
+      location shouldBe s"$serverUrl${uk.gov.hmrc.fileupload.controllers.routes.EnvelopeController.show(EnvelopeId("abc-def")).url}"
     }
   }
 
@@ -103,7 +103,7 @@ class EnvelopeControllerSpec extends UnitSpec with WithFakeApplication with Scal
 
       result.header.status shouldBe Status.CREATED
       val location = result.header.headers("Location")
-      location shouldBe s"$serverUrl${uk.gov.hmrc.fileupload.controllers.envelope.routes.EnvelopeController.show(EnvelopeId("aaa-bbb")).url}"
+      location shouldBe s"$serverUrl${uk.gov.hmrc.fileupload.controllers.routes.EnvelopeController.show(EnvelopeId("aaa-bbb")).url}"
     }
   }
 
