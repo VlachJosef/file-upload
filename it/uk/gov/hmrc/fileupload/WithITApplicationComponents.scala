@@ -17,13 +17,15 @@
 package uk.gov.hmrc.fileupload
 
 import org.scalatest.{BeforeAndAfterAll, Suite, TestData}
-import org.scalatestplus.play.OneAppPerTest
+import org.scalatestplus.play.{OneAppPerTest, OneServerPerSuite}
 import play.api._
 import play.api.test.Helpers._
+import uk.gov.hmrc.mongo.MongoSpecSupport
 
-trait WithApplicationComponents extends OneAppPerTest with BeforeAndAfterAll {
+trait WithITApplicationComponents extends OneServerPerSuite with MongoSpecSupport {
   this: Suite =>
-  val fakeApplication = new ApplicationModule(context).application
+  override implicit lazy val app = new ApplicationModule(context).application
+  override lazy val port: Int = 9000
 
   // accessed to get the components in tests
   final def components: ApplicationModule = new ApplicationModule(context)
@@ -36,25 +38,29 @@ trait WithApplicationComponents extends OneAppPerTest with BeforeAndAfterAll {
   def context: ApplicationLoader.Context = {
     val classLoader = ApplicationLoader.getClass.getClassLoader
     val env = new Environment(new java.io.File("."), classLoader, Mode.Test)
-    ApplicationLoader.createContext(env)
+    ApplicationLoader.createContext(env, initialSettings = Map(
+      "mongodb.uri" -> s"mongodb://localhost:27017/$databaseName",
+      "auditing.enabled" -> "false",
+      "feature.basicAuthEnabled" -> "true"
+    ))
   }
 
-  override def beforeAll() {
+  /*override def beforeAll() {
     super.beforeAll()
-    Play.start(fakeApplication)
+    Play.start(app)
   }
 
   override def afterAll() {
     super.afterAll()
-    Play.stop(fakeApplication)
+    Play.stop(app)
   }
 
   def evaluateUsingPlay[T](block: => T): T = {
-    running(fakeApplication) {
+    running(app) {
       block
     }
   }
 
-  override def newAppForTest(testData: TestData): Application = newApplication
+  override def newAppForTest(testData: TestData): Application = newApplication*/
 
 }

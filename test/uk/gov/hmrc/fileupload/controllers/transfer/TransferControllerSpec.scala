@@ -24,12 +24,12 @@ import uk.gov.hmrc.fileupload.infrastructure.{AlwaysAuthorisedBasicAuth, BasicAu
 import uk.gov.hmrc.fileupload.read.envelope.Envelope
 import uk.gov.hmrc.fileupload.write.envelope._
 import uk.gov.hmrc.fileupload.write.infrastructure.{CommandAccepted, CommandError, CommandNotAccepted}
-import uk.gov.hmrc.fileupload.{Support, WithApplicationComponents}
+import uk.gov.hmrc.fileupload.{Support, WithITApplicationComponents}
 import uk.gov.hmrc.play.test.UnitSpec
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class TransferControllerSpec extends UnitSpec with WithApplicationComponents with ScalaFutures {
+class TransferControllerSpec extends UnitSpec with WithITApplicationComponents with ScalaFutures {
 
   implicit val ec = ExecutionContext.global
 

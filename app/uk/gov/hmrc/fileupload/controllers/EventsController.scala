@@ -34,17 +34,6 @@ import scala.language.postfixOps
 import scala.util.control.NonFatal
 import scala.util.{Failure, Success, Try}
 
-package object events {
-
-  import play.api.libs.concurrent.Execution.Implicits._
-
-  object EventController extends EventController(
-    MicroserviceGlobal.envelopeCommandHandler,
-    MicroserviceGlobal.eventStore.unitsOfWorkForAggregate,
-    MicroserviceGlobal.createReportHandler.handle(replay = true))
-
-}
-
 class EventController(handleCommand: (EnvelopeCommand) => Future[Xor[CommandNotAccepted, CommandAccepted.type]],
                       unitOfWorks: StreamId => Future[GetResult], publishAllEvents: Seq[DomainEvent] => Unit)
                      (implicit executionContext: ExecutionContext) extends Controller {

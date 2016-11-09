@@ -35,7 +35,7 @@ import uk.gov.hmrc.play.test.UnitSpec
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class EnvelopeControllerSpec extends UnitSpec with WithApplicationComponents with ScalaFutures {
+class EnvelopeControllerSpec extends UnitSpec with WithITApplicationComponents with ScalaFutures {
 
   import Support._
 

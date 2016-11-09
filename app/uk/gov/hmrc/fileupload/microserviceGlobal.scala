@@ -27,6 +27,7 @@ import org.joda.time.Duration
 import play.api.ApplicationLoader.Context
 import play.api._
 import play.api.libs.concurrent.Execution.Implicits._
+import play.api.libs.ws.ahc.{AhcWSClient, AhcWSComponents}
 import play.api.mvc.{EssentialFilter, RequestHeader, Result}
 import play.api.routing.Router
 import reactivemongo.api.commands
@@ -61,78 +62,70 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class ApplicationLoader extends play.api.ApplicationLoader {
   def load(context: Context) = {
+    LoggerConfigurator(context.environment.classLoader).foreach {
+      _.configure(context.environment)
+    }
     new ApplicationModule(context).application
   }
 }
 
-class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(context) {
-
-  val appRoutes = new AppRoutes(httpErrorHandler, MicroserviceGlobal.envelopeController,
-    MicroserviceGlobal.fileController, MicroserviceGlobal.eventController)
-
-  val transferRoutes = new TransferRoutes(httpErrorHandler, MicroserviceGlobal.transferController)
-  val routingRoutes = new RoutingRoutes(httpErrorHandler, MicroserviceGlobal.routingController)
-  val healthRoutes = new health.Routes()
-  lazy val metricsController = new MetricsController(new GraphiteMetricsImpl(applicationLifecycle, configuration))
-  val adminRoutes = new AdminRoutes(httpErrorHandler, new Provider[MetricsController] {
-    override def get(): MetricsController = metricsController
-  })
-
-  lazy val router: Router = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
-    healthRoutes, adminRoutes)
-
-}
-
-object ControllerConfiguration extends ControllerConfig {
-  lazy val controllerConfigs = Play.current.configuration.underlying.as[Config]("controllers")
-}
-
-object AuthParamsControllerConfiguration extends AuthParamsControllerConfig {
-  lazy val controllerConfigs = ControllerConfiguration.controllerConfigs
-}
-
-object MicroserviceAuditFilter extends AuditFilter with AppName {
-  override def mat = Streams.Implicits.materializer
-  override val auditConnector = MicroserviceAuditConnector
-
-  override def controllerNeedsAuditing(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsAuditing
-}
-
-object MicroserviceLoggingFilter extends LoggingFilter {
-  override def mat = Streams.Implicits.materializer
-  override def controllerNeedsLogging(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsLogging
-}
-
-object MicroserviceAuthFilter extends AuthorisationFilter {
-  override def mat = Streams.Implicits.materializer
-  override lazy val authParamsConfig = AuthParamsControllerConfiguration
-  override lazy val authConnector = MicroserviceAuthConnector
-
-  override def controllerNeedsAuth(controllerName: String): Boolean = ControllerConfiguration.paramsForController(controllerName).needsAuth
-}
-
-object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
-
-  override val auditConnector = MicroserviceAuditConnector
-
-  override def microserviceMetricsConfig(implicit app: Application): Option[Configuration] = app.configuration.getConfig(s"microservice.metrics")
-
-  override val loggingFilter = MicroserviceLoggingFilter
-
-  override val microserviceAuditFilter = MicroserviceAuditFilter
-
-  override val authFilter = None
+class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(context) with AhcWSComponents{
 
   var subscribe: (ActorRef, Class[_]) => Boolean = _
   var publish: (AnyRef) => Unit = _
-
   var withBasicAuth: BasicAuth = _
+  var eventStore: MongoEventStore = _
 
-  lazy val db = DefaultMongoConnection.db
+  def basicAuthConfiguration(config: Configuration): BasicAuthConfiguration = {
+    def getUsers(config: Configuration): List[User] = {
+      config.getString("basicAuth.authorizedUsers").map { s =>
+        s.split(";").flatMap(
+          user => {
+            user.split(":") match {
+              case Array(username, password) => Some(User(username, password))
+              case _ => None
+            }
+          }
+        ).toList
+      }.getOrElse(List.empty)
+    }
 
-  lazy val auditedHttpExecute = PlayHttp.execute(auditConnector, appName, Some(t => Logger.warn(t.getMessage, t))) _
+    config.getBoolean("feature.basicAuthEnabled").getOrElse(false) match {
+      case true => BasicAuthEnabled(getUsers(config))
+      case false => BasicAuthDisabled
+    }
+  }
 
-  lazy val envelopeRepository = uk.gov.hmrc.fileupload.read.envelope.Repository.apply(db)
+  def onStart(): Unit = {
+
+    import play.api.libs.concurrent.Akka
+    subscribe = actorSystem.eventStream.subscribe
+    publish = actorSystem.eventStream.publish
+
+    // event store
+    if (play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
+      eventStore = new MongoEventStore(db.db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
+    } else {
+      eventStore = new MongoEventStore(db.db)
+    }
+
+    withBasicAuth = BasicAuth(basicAuthConfiguration(configuration))
+
+    // notifier
+    actorSystem.actorOf(NotifierActor.props(subscribe, find, sendNotification), "notifierActor")
+    actorSystem.actorOf(StatsActor.props(subscribe, find, sendNotification, saveFileQuarantinedStat,
+      deleteVirusDetectedStat, deleteFileStoredStat), "statsActor")
+
+  }
+  onStart()
+
+  lazy val database = new ReactiveMongoConnector(configuration, applicationLifecycle)
+
+  def db = database.mongoConnector
+
+  lazy val auditedHttpExecute = PlayHttp.execute(MicroserviceGlobal.auditConnector, MicroserviceGlobal.appName, Some(t => Logger.warn(t.getMessage, t))) _
+
+  lazy val envelopeRepository = uk.gov.hmrc.fileupload.read.envelope.Repository.apply(db.db)
 
   lazy val getEnvelope = envelopeRepository.get _
 
@@ -143,12 +136,12 @@ object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
 
   lazy val sendNotification = NotifierRepository.notify(auditedHttpExecute) _
 
-  lazy val fileRepository = uk.gov.hmrc.fileupload.read.file.Repository.apply(db)
+  lazy val fileRepository = uk.gov.hmrc.fileupload.read.file.Repository.apply(db.db)
   val iterateeForUpload = fileRepository.iterateeForUpload _
   val getFileFromRepo = fileRepository.retrieveFile _
   lazy val retrieveFile = FileService.retrieveFile(getFileFromRepo) _
 
-  lazy val statsRepository = uk.gov.hmrc.fileupload.read.stats.Repository.apply(db)
+  lazy val statsRepository = uk.gov.hmrc.fileupload.read.stats.Repository.apply(db.db)
   lazy val saveFileQuarantinedStat = Stats.save(statsRepository.insert) _
   lazy val deleteFileStoredStat = Stats.deleteFileStored(statsRepository.delete) _
   lazy val deleteVirusDetectedStat = Stats.deleteVirusDetected(statsRepository.delete) _
@@ -156,8 +149,6 @@ object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
 
   implicit val reader = new UnitOfWorkReader(EventSerializer.toEventData)
   implicit val writer = new UnitOfWorkWriter(EventSerializer.fromEventData)
-
-  var eventStore: MongoEventStore = _
 
   // envelope read model
   lazy val createReportHandler = new EnvelopeReportHandler(
@@ -184,7 +175,7 @@ object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
       handleCommand = envelopeCommandHandler,
       findEnvelope = find,
       findMetadata = findMetadata,
-      findAllInProgressFile = allInProgressFile )
+      findAllInProgressFile = allInProgressFile)
   }
 
   lazy val eventController = {
@@ -219,49 +210,76 @@ object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
     new RoutingController(envelopeCommandHandler)
   }
 
-  def basicAuthConfiguration(config: Configuration): BasicAuthConfiguration = {
-    def getUsers(config: Configuration): List[User] = {
-      config.getString("basicAuth.authorizedUsers").map { s =>
-        s.split(";").flatMap(
-          user => {
-            user.split(":") match {
-              case Array(username, password) => Some(User(username, password))
-              case _ => None
-            }
-          }
-        ).toList
-      }.getOrElse(List.empty)
-    }
+  lazy val appRoutes = new AppRoutes(httpErrorHandler, new Provider[EnvelopeController] {
+    override def get(): EnvelopeController = envelopeController
+  },
+    new Provider[FileController] {
+      override def get(): FileController = fileController
+    }, new Provider[EventController] {
+      override def get(): EventController = eventController
+    })
 
-    config.getBoolean("feature.basicAuthEnabled").getOrElse(false) match {
-      case true => BasicAuthEnabled(getUsers(config))
-      case false => BasicAuthDisabled
-    }
-  }
+  lazy val transferRoutes = new TransferRoutes(httpErrorHandler, new Provider[TransferController] {
+    override def get(): TransferController = transferController
+  })
+  lazy val routingRoutes = new RoutingRoutes(httpErrorHandler, new Provider[RoutingController] {
+    override def get(): RoutingController = routingController
+  })
+  lazy val metricsController = new MetricsController(new GraphiteMetricsImpl(applicationLifecycle, configuration))
+  lazy val adminRoutes = new AdminRoutes(httpErrorHandler, new Provider[MetricsController] {
+    override def get(): MetricsController = metricsController
+  })
+
+  lazy val router: Router = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
+    health.Routes, adminRoutes)
+
+}
+
+object ControllerConfiguration extends ControllerConfig {
+  lazy val controllerConfigs = Play.current.configuration.underlying.as[Config]("controllers")
+}
+
+object AuthParamsControllerConfiguration extends AuthParamsControllerConfig {
+  lazy val controllerConfigs = ControllerConfiguration.controllerConfigs
+}
+
+object MicroserviceAuditFilter extends AuditFilter with AppName {
+  override def mat = Streams.Implicits.materializer
+
+  override val auditConnector = MicroserviceAuditConnector
+
+  override def controllerNeedsAuditing(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsAuditing
+}
+
+object MicroserviceLoggingFilter extends LoggingFilter {
+  override def mat = Streams.Implicits.materializer
+
+  override def controllerNeedsLogging(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsLogging
+}
+
+object MicroserviceAuthFilter extends AuthorisationFilter {
+  override def mat = Streams.Implicits.materializer
+
+  override lazy val authParamsConfig = AuthParamsControllerConfiguration
+  override lazy val authConnector = MicroserviceAuthConnector
+
+  override def controllerNeedsAuth(controllerName: String): Boolean = ControllerConfiguration.paramsForController(controllerName).needsAuth
+}
+
+object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
+
+  override val auditConnector = MicroserviceAuditConnector
+
+  override def microserviceMetricsConfig(implicit app: Application): Option[Configuration] = app.configuration.getConfig(s"microservice.metrics")
+
+  override val loggingFilter = MicroserviceLoggingFilter
+
+  override val microserviceAuditFilter = MicroserviceAuditFilter
+
+  override val authFilter = None
 
   override def onStart(app: Application): Unit = {
     super.onStart(app)
-
-    // event stream
-    import play.api.Play.current
-    import play.api.libs.concurrent.Akka
-    val eventStream = Akka.system.eventStream
-    subscribe = eventStream.subscribe
-    publish = eventStream.publish
-
-    // event store
-    if (play.Play.isProd && app.configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
-      eventStore = new MongoEventStore(db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
-    } else {
-      eventStore = new MongoEventStore(db)
-    }
-
-    withBasicAuth = BasicAuth(basicAuthConfiguration(app.configuration))
-
-    // notifier
-    Akka.system.actorOf(NotifierActor.props(subscribe, find, sendNotification), "notifierActor")
-    Akka.system.actorOf(StatsActor.props(subscribe, find, sendNotification, saveFileQuarantinedStat,
-      deleteVirusDetectedStat, deleteFileStoredStat), "statsActor")
 
   }
 

@@ -39,7 +39,7 @@ import uk.gov.hmrc.play.test.UnitSpec
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class FileControllerSpec extends UnitSpec with WithApplicationComponents with ScalaFutures {
+class FileControllerSpec extends UnitSpec with WithITApplicationComponents with ScalaFutures {
 
   implicit override val patienceConfig = PatienceConfig(timeout = Span(5, Seconds), interval = Span(5, Millis))
 
