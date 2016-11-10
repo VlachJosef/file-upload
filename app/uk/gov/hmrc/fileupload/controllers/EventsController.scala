@@ -22,7 +22,7 @@ import play.api.libs.iteratee.Iteratee
 import play.api.libs.json.Json
 import play.api.libs.streams.Accumulator
 import play.api.mvc._
-import uk.gov.hmrc.fileupload.{ByteStream, MicroserviceGlobal}
+import uk.gov.hmrc.fileupload.ByteStream
 import uk.gov.hmrc.fileupload.controllers.EventFormatters._
 import uk.gov.hmrc.fileupload.utils.StreamUtils
 import uk.gov.hmrc.fileupload.write.envelope._
@@ -75,7 +75,7 @@ class EventController(handleCommand: (EnvelopeCommand) => Future[Xor[CommandNotA
   def replay(streamId: StreamId) = Action.async { implicit request =>
     unitOfWorks(streamId).map {
       case Xor.Right(sequence) =>
-        publishAllEvents(sequence.flatMap( _.events ))
+        publishAllEvents(sequence.flatMap(_.events))
         Ok
       case Xor.Left(error) => InternalServerError(s"Unexpected result: ${error.message}")
     }
@@ -85,7 +85,7 @@ class EventController(handleCommand: (EnvelopeCommand) => Future[Xor[CommandNotA
 object EventParser extends BodyParser[Event] {
 
   def apply(request: RequestHeader): Accumulator[ByteString, Either[Result, Event]] = {
-    val pattern =  "events/(.+)$".r.unanchored
+    val pattern = "events/(.+)$".r.unanchored
 
     import play.api.libs.concurrent.Execution.Implicits._
     StreamUtils.iterateeToAccumulator(Iteratee.consume[ByteStream]()).map { data =>
@@ -93,7 +93,7 @@ object EventParser extends BodyParser[Event] {
 
       val triedEvent: Try[Event] = request.uri match {
         case pattern(eventType) =>
-          eventType.toLowerCase match  {
+          eventType.toLowerCase match {
             case "filescanned" => Try(Json.fromJson[FileScanned](parsedData).get)
             case "fileinquarantinestored" => Try(Json.fromJson[FileInQuarantineStored](parsedData).get)
             case _ => Failure(new InvalidEventException(s"$eventType is not a valid event"))

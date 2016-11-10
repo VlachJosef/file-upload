@@ -20,7 +20,6 @@ import play.api.mvc.Action
 import play.api.mvc.Results._
 import reactivemongo.api.commands.WriteResult
 import reactivemongo.bson.BSONDocument
-import uk.gov.hmrc.fileupload.MicroserviceGlobal
 import uk.gov.hmrc.fileupload.read.stats.{Repository => InProgressRepository}
 import uk.gov.hmrc.fileupload.write.infrastructure.MongoEventStore
 

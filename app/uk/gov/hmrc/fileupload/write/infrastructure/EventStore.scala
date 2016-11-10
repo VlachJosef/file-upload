@@ -71,7 +71,7 @@ class MongoEventStore(mongo: () => DB with DBMetaCommands, writeConcern: WriteCo
           Xor.Left(VersionConflictError)
       case e =>
         Xor.left(NotSavedError(e.getMessage))
-    }
+      }
 
   override def unitsOfWorkForAggregate(streamId: StreamId): Future[GetResult] =
     collection.find(BSONDocument("streamId" -> streamId.value)).cursor[UnitOfWork]().collect[List]().map { l =>

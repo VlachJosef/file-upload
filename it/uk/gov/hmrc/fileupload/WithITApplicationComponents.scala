@@ -16,10 +16,9 @@
 
 package uk.gov.hmrc.fileupload
 
-import org.scalatest.{BeforeAndAfterAll, Suite, TestData}
-import org.scalatestplus.play.{OneAppPerTest, OneServerPerSuite}
+import org.scalatest.Suite
+import org.scalatestplus.play.OneServerPerSuite
 import play.api._
-import play.api.test.Helpers._
 import uk.gov.hmrc.mongo.MongoSpecSupport
 
 trait WithITApplicationComponents extends OneServerPerSuite with MongoSpecSupport {
@@ -44,23 +43,5 @@ trait WithITApplicationComponents extends OneServerPerSuite with MongoSpecSuppor
       "feature.basicAuthEnabled" -> "true"
     ))
   }
-
-  /*override def beforeAll() {
-    super.beforeAll()
-    Play.start(app)
-  }
-
-  override def afterAll() {
-    super.afterAll()
-    Play.stop(app)
-  }
-
-  def evaluateUsingPlay[T](block: => T): T = {
-    running(app) {
-      block
-    }
-  }
-
-  override def newAppForTest(testData: TestData): Application = newApplication*/
 
 }

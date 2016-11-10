@@ -27,8 +27,8 @@ import org.joda.time.Duration
 import play.api.ApplicationLoader.Context
 import play.api._
 import play.api.libs.concurrent.Execution.Implicits._
-import play.api.libs.ws.ahc.{AhcWSClient, AhcWSComponents}
-import play.api.mvc.{EssentialFilter, RequestHeader, Result}
+import play.api.libs.ws.ahc.AhcWSComponents
+import play.api.mvc.EssentialFilter
 import play.api.routing.Router
 import reactivemongo.api.commands
 import uk.gov.hmrc.fileupload.admin.{Routes => AdminRoutes}
@@ -50,15 +50,16 @@ import uk.gov.hmrc.fileupload.write.envelope._
 import uk.gov.hmrc.fileupload.write.infrastructure.UnitOfWorkSerializer.{UnitOfWorkReader, UnitOfWorkWriter}
 import uk.gov.hmrc.fileupload.write.infrastructure.{Aggregate, MongoEventStore, StreamId}
 import uk.gov.hmrc.play.audit.filters.AuditFilter
+import uk.gov.hmrc.play.audit.http.config.ErrorAuditingSettings
+import uk.gov.hmrc.play.audit.http.connector.AuditConnector
 import uk.gov.hmrc.play.auth.controllers.AuthParamsControllerConfig
 import uk.gov.hmrc.play.auth.microservice.filters.AuthorisationFilter
-import uk.gov.hmrc.play.config.{AppName, ControllerConfig, RunMode}
-import uk.gov.hmrc.play.graphite.GraphiteMetricsImpl
-import uk.gov.hmrc.play.http.BadRequestException
+import uk.gov.hmrc.play.config.{AppName, ControllerConfig}
+import uk.gov.hmrc.play.graphite.{GraphiteConfig, GraphiteMetricsImpl}
 import uk.gov.hmrc.play.http.logging.filters.LoggingFilter
-import uk.gov.hmrc.play.microservice.bootstrap.DefaultMicroserviceGlobal
+import uk.gov.hmrc.play.microservice.bootstrap.Routing.RemovingOfTrailingSlashes
+import uk.gov.hmrc.play.microservice.bootstrap.{JsonErrorHandling, MicroserviceFilters}
 
-import scala.concurrent.{ExecutionContext, Future}
 
 class ApplicationLoader extends play.api.ApplicationLoader {
   def load(context: Context) = {
@@ -69,12 +70,20 @@ class ApplicationLoader extends play.api.ApplicationLoader {
   }
 }
 
-class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(context) with AhcWSComponents{
+class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(context)
+  with AhcWSComponents with AppName with MicroserviceFilters
+  with GraphiteConfig
+  with RemovingOfTrailingSlashes
+  with JsonErrorHandling
+  with ErrorAuditingSettings {
 
   var subscribe: (ActorRef, Class[_]) => Boolean = _
   var publish: (AnyRef) => Unit = _
   var withBasicAuth: BasicAuth = _
   var eventStore: MongoEventStore = _
+
+  implicit val reader = new UnitOfWorkReader(EventSerializer.toEventData)
+  implicit val writer = new UnitOfWorkWriter(EventSerializer.fromEventData)
 
   def basicAuthConfiguration(config: Configuration): BasicAuthConfiguration = {
     def getUsers(config: Configuration): List[User] = {
@@ -96,17 +105,19 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
     }
   }
 
-  def onStart(): Unit = {
+  lazy val database = new ReactiveMongoConnector(configuration, applicationLifecycle)
 
-    import play.api.libs.concurrent.Akka
+  lazy val db = database.mongoConnector.db
+
+  def onStart(): Unit = {
     subscribe = actorSystem.eventStream.subscribe
     publish = actorSystem.eventStream.publish
 
     // event store
     if (play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
-      eventStore = new MongoEventStore(db.db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
+      eventStore = new MongoEventStore(db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
     } else {
-      eventStore = new MongoEventStore(db.db)
+      eventStore = new MongoEventStore(db)
     }
 
     withBasicAuth = BasicAuth(basicAuthConfiguration(configuration))
@@ -117,15 +128,13 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
       deleteVirusDetectedStat, deleteFileStoredStat), "statsActor")
 
   }
+
   onStart()
 
-  lazy val database = new ReactiveMongoConnector(configuration, applicationLifecycle)
+  lazy val auditedHttpExecute = PlayHttp.execute(MicroserviceAuditFilter.auditConnector,
+    appName, Some(t => Logger.warn(t.getMessage, t))) _
 
-  def db = database.mongoConnector
-
-  lazy val auditedHttpExecute = PlayHttp.execute(MicroserviceGlobal.auditConnector, MicroserviceGlobal.appName, Some(t => Logger.warn(t.getMessage, t))) _
-
-  lazy val envelopeRepository = uk.gov.hmrc.fileupload.read.envelope.Repository.apply(db.db)
+  lazy val envelopeRepository = uk.gov.hmrc.fileupload.read.envelope.Repository.apply(db)
 
   lazy val getEnvelope = envelopeRepository.get _
 
@@ -134,21 +143,18 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   lazy val find = EnvelopeService.find(getEnvelope) _
   lazy val findMetadata = EnvelopeService.findMetadata(find) _
 
-  lazy val sendNotification = NotifierRepository.notify(auditedHttpExecute) _
+  lazy val sendNotification = NotifierRepository.notify(auditedHttpExecute, wsClient) _
 
-  lazy val fileRepository = uk.gov.hmrc.fileupload.read.file.Repository.apply(db.db)
+  lazy val fileRepository = uk.gov.hmrc.fileupload.read.file.Repository.apply(db)
   val iterateeForUpload = fileRepository.iterateeForUpload _
   val getFileFromRepo = fileRepository.retrieveFile _
   lazy val retrieveFile = FileService.retrieveFile(getFileFromRepo) _
 
-  lazy val statsRepository = uk.gov.hmrc.fileupload.read.stats.Repository.apply(db.db)
+  lazy val statsRepository = uk.gov.hmrc.fileupload.read.stats.Repository.apply(db)
   lazy val saveFileQuarantinedStat = Stats.save(statsRepository.insert) _
   lazy val deleteFileStoredStat = Stats.deleteFileStored(statsRepository.delete) _
   lazy val deleteVirusDetectedStat = Stats.deleteVirusDetected(statsRepository.delete) _
   lazy val allInProgressFile = Stats.all(statsRepository.all) _
-
-  implicit val reader = new UnitOfWorkReader(EventSerializer.toEventData)
-  implicit val writer = new UnitOfWorkWriter(EventSerializer.fromEventData)
 
   // envelope read model
   lazy val createReportHandler = new EnvelopeReportHandler(
@@ -183,7 +189,6 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   }
 
   lazy val fileController = {
-    import play.api.libs.concurrent.Execution.Implicits._
     val uploadBodyParser = UploadParser.parse(iterateeForUpload) _
     new FileController(
       withBasicAuth = withBasicAuth,
@@ -233,63 +238,44 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   lazy val router: Router = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
     health.Routes, adminRoutes)
 
-}
 
-object ControllerConfiguration extends ControllerConfig {
-  lazy val controllerConfigs = Play.current.configuration.underlying.as[Config]("controllers")
-}
-
-object AuthParamsControllerConfiguration extends AuthParamsControllerConfig {
-  lazy val controllerConfigs = ControllerConfiguration.controllerConfigs
-}
-
-object MicroserviceAuditFilter extends AuditFilter with AppName {
-  override def mat = Streams.Implicits.materializer
-
-  override val auditConnector = MicroserviceAuditConnector
-
-  override def controllerNeedsAuditing(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsAuditing
-}
-
-object MicroserviceLoggingFilter extends LoggingFilter {
-  override def mat = Streams.Implicits.materializer
-
-  override def controllerNeedsLogging(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsLogging
-}
-
-object MicroserviceAuthFilter extends AuthorisationFilter {
-  override def mat = Streams.Implicits.materializer
-
-  override lazy val authParamsConfig = AuthParamsControllerConfiguration
-  override lazy val authConnector = MicroserviceAuthConnector
-
-  override def controllerNeedsAuth(controllerName: String): Boolean = ControllerConfiguration.paramsForController(controllerName).needsAuth
-}
-
-object MicroserviceGlobal extends DefaultMicroserviceGlobal with RunMode {
-
-  override val auditConnector = MicroserviceAuditConnector
-
-  override def microserviceMetricsConfig(implicit app: Application): Option[Configuration] = app.configuration.getConfig(s"microservice.metrics")
-
-  override val loggingFilter = MicroserviceLoggingFilter
-
-  override val microserviceAuditFilter = MicroserviceAuditFilter
-
-  override val authFilter = None
-
-  override def onStart(app: Application): Unit = {
-    super.onStart(app)
-
+  object ControllerConfiguration extends ControllerConfig {
+    lazy val controllerConfigs = configuration.underlying.as[Config]("controllers")
   }
 
-  override def onBadRequest(request: RequestHeader, error: String): Future[Result] = {
-    Future(ExceptionHandler(new BadRequestException(error)))(ExecutionContext.global)
+  object AuthParamsControllerConfiguration extends AuthParamsControllerConfig {
+    lazy val controllerConfigs = ControllerConfiguration.controllerConfigs
   }
 
-  override def onError(request: RequestHeader, ex: Throwable): Future[Result] = {
-    Future(ExceptionHandler(ex))(ExecutionContext.global)
+  object MicroserviceAuditFilter extends AuditFilter with AppName {
+    override def mat = Streams.Implicits.materializer
+
+    override val auditConnector = MicroserviceAuditConnector
+
+    override def controllerNeedsAuditing(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsAuditing
   }
 
-  override def microserviceFilters: Seq[EssentialFilter] = defaultMicroserviceFilters // ++ Seq(FileUploadValidationFilter)
+  object MicroserviceLoggingFilter extends LoggingFilter {
+    override def mat = Streams.Implicits.materializer
+
+    override def controllerNeedsLogging(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsLogging
+  }
+
+  object MicroserviceAuthFilter extends AuthorisationFilter {
+    override def mat = Streams.Implicits.materializer
+
+    override lazy val authParamsConfig = AuthParamsControllerConfiguration
+    override lazy val authConnector = MicroserviceAuthConnector
+    override def controllerNeedsAuth(controllerName: String): Boolean = ControllerConfiguration.paramsForController(controllerName).needsAuth
+  }
+
+  override def loggingFilter: LoggingFilter = MicroserviceLoggingFilter
+
+  override def microserviceAuditFilter: AuditFilter = MicroserviceAuditFilter
+
+  override def authFilter: Option[EssentialFilter] = None
+
+  override def microserviceMetricsConfig(implicit app: Application): Option[Configuration] = configuration.getConfig(s"microservice.metrics")
+
+  override def auditConnector: AuditConnector = MicroserviceAuditConnector
 }
