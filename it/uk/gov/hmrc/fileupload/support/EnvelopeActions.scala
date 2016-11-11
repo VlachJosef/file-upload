@@ -87,6 +87,15 @@ trait EnvelopeActions extends ActionsSupport {
       .futureValue
   }
 
+  def getEnvelopesForStatus(status: List[String], inclusive: Boolean) = {
+    val statuses = status.map(n => s"status=$n").mkString("&")
+    client
+      .url(s"$url/envelopes?$statuses&inclusive=$inclusive").withHeaders(HeaderNames.AUTHORIZATION -> ("Basic " + basic64("yuan:yaunspassword")))
+        .get()
+        //.getStream()
+      .futureValue
+  }
+
   def archiveEnvelopFor(id: EnvelopeId): WSResponse =
     client
       .url(s"$fileTransferUrl/envelopes/$id")

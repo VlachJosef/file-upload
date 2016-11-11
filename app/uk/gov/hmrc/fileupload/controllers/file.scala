@@ -32,7 +32,7 @@ object UploadParser {
 
     iterateeToAccumulator(uploadFile(envelopeId, fileId, fileRefId)) map (Right(_)) recover {
       case NonFatal(e) => Left(ExceptionHandler(e))
-    }
   }
+}
 
 }
