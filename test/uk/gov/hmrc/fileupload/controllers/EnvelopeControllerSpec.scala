@@ -36,7 +36,7 @@ import play.api.libs.iteratee.Enumerator
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class EnvelopeControllerSpec extends UnitSpec with WithITApplicationComponents with ScalaFutures {
+class EnvelopeControllerSpec extends UnitSpec with WithApplicationComponents with ScalaFutures {
 
   import Support._
 

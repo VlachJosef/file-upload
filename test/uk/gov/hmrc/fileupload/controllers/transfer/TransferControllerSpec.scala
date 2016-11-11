@@ -20,16 +20,16 @@ import cats.data.Xor
 import org.scalatest.concurrent.ScalaFutures
 import play.api.http.Status
 import play.api.test.FakeRequest
+import uk.gov.hmrc.fileupload.Support
 import uk.gov.hmrc.fileupload.infrastructure.{AlwaysAuthorisedBasicAuth, BasicAuth}
 import uk.gov.hmrc.fileupload.read.envelope.Envelope
 import uk.gov.hmrc.fileupload.write.envelope._
 import uk.gov.hmrc.fileupload.write.infrastructure.{CommandAccepted, CommandError, CommandNotAccepted}
-import uk.gov.hmrc.fileupload.{Support, WithITApplicationComponents}
 import uk.gov.hmrc.play.test.UnitSpec
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class TransferControllerSpec extends UnitSpec with WithITApplicationComponents with ScalaFutures {
+class TransferControllerSpec extends UnitSpec with ScalaFutures {
 
   implicit val ec = ExecutionContext.global
 
