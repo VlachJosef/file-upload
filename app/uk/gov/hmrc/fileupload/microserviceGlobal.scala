@@ -23,7 +23,6 @@ import akka.actor.ActorRef
 import com.kenshoo.play.metrics.MetricsController
 import com.typesafe.config.Config
 import net.ceedubs.ficus.Ficus._
-import org.joda.time.Duration
 import play.api.ApplicationLoader.Context
 import play.api._
 import play.api.libs.concurrent.Execution.Implicits._
@@ -190,15 +189,19 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
     new EventController(envelopeCommandHandler, eventStore.unitsOfWorkForAggregate, createReportHandler.handle(replay = true))
   }
 
+  lazy val commandController = {
+    new CommandController(envelopeCommandHandler)
+  }
+
   lazy val fileController = {
+    import play.api.libs.concurrent.Execution.Implicits._
     val uploadBodyParser = UploadParser.parse(iterateeForUpload) _
     new FileController(
       withBasicAuth = withBasicAuth,
       uploadBodyParser = uploadBodyParser,
       retrieveFile = retrieveFile,
       withValidEnvelope = withValidEnvelope,
-      handleCommand = envelopeCommandHandler,
-      clear = fileRepository.clear() _)
+      handleCommand = envelopeCommandHandler)
   }
 
   lazy val transferController = {
@@ -209,8 +212,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
 
   lazy val testOnlyController = {
     val removeAllEnvelopes = () => envelopeRepository.removeAll()
-    val removeAllFiles = () => fileRepository.clear(Duration.ZERO)
-    new TestOnlyController(removeAllFiles, removeAllEnvelopes, eventStore, statsRepository)
+    new TestOnlyController(removeAllEnvelopes, eventStore, statsRepository)
   }
 
   lazy val routingController = {
@@ -224,7 +226,10 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
       override def get(): FileController = fileController
     }, new Provider[EventController] {
       override def get(): EventController = eventController
-    })
+    }, new Provider[CommandController] {
+      override def get(): CommandController = commandController
+    }
+  )
 
   lazy val transferRoutes = new TransferRoutes(httpErrorHandler, new Provider[TransferController] {
     override def get(): TransferController = transferController
@@ -268,6 +273,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
 
     override lazy val authParamsConfig = AuthParamsControllerConfiguration
     override lazy val authConnector = MicroserviceAuthConnector
+
     override def controllerNeedsAuth(controllerName: String): Boolean = ControllerConfiguration.paramsForController(controllerName).needsAuth
   }
 
