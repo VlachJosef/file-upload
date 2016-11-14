@@ -24,7 +24,7 @@ import uk.gov.hmrc.fileupload.read.envelope._
 import uk.gov.hmrc.fileupload._
 import uk.gov.hmrc.play.test.{UnitSpec, WithFakeApplication}
 
-class OutputForTransferSpec extends UnitSpec with WithApplicationComponents {
+class OutputForTransferSpec extends UnitSpec with ApplicationComponents {
 
   "Presenting individual files" should {
     "include all fields if values are present" in {

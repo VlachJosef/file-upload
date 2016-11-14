@@ -4,9 +4,9 @@ import org.scalatest.Suite
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.time.{Millis, Seconds, Span}
 import play.api.http.Status
-import uk.gov.hmrc.fileupload.WithITApplicationComponents
+import uk.gov.hmrc.fileupload.ITApplicationComponents
 
-trait ActionsSupport extends ScalaFutures with Status with WithITApplicationComponents{
+trait ActionsSupport extends ScalaFutures with Status with ITApplicationComponents{
   this: Suite =>
 
   implicit override val patienceConfig = PatienceConfig(timeout = Span(5, Seconds), interval = Span(5, Millis))
@@ -15,5 +15,4 @@ trait ActionsSupport extends ScalaFutures with Status with WithITApplicationComp
   val fileTransferUrl = "http://localhost:9000/file-transfer"
   val fileRoutingUrl = "http://localhost:9000/file-routing"
   val client = components.wsClient
-  //implicit val ec = ExecutionContext.global
 }

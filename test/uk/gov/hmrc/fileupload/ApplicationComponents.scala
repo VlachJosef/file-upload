@@ -21,7 +21,7 @@ import org.scalatestplus.play.OneAppPerTest
 import play.api._
 import play.api.test.Helpers._
 
-trait WithApplicationComponents extends OneAppPerTest with BeforeAndAfterAll {
+trait ApplicationComponents extends OneAppPerTest with BeforeAndAfterAll {
   this: Suite =>
   val fakeApplication = new ApplicationModule(context).application
 

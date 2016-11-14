@@ -21,7 +21,7 @@ import org.scalatestplus.play.OneServerPerSuite
 import play.api._
 import uk.gov.hmrc.mongo.MongoSpecSupport
 
-trait WithITApplicationComponents extends OneServerPerSuite with MongoSpecSupport {
+trait ITApplicationComponents extends OneServerPerSuite with MongoSpecSupport {
   this: Suite =>
   override implicit lazy val app = new ApplicationModule(context).application
   override lazy val port: Int = 9000

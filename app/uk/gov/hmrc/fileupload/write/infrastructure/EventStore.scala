@@ -68,10 +68,11 @@ class MongoEventStore(mongo: () => DB with DBMetaCommands, writeConcern: WriteCo
       }
     }.recover {
       case e: DatabaseException if e.code == duplicateKeyErrroCode =>
-          Xor.Left(VersionConflictError)
+        Xor.Left(VersionConflictError)
       case e =>
         Xor.left(NotSavedError(e.getMessage))
-      }
+    }
+
 
   override def unitsOfWorkForAggregate(streamId: StreamId): Future[GetResult] =
     collection.find(BSONDocument("streamId" -> streamId.value)).cursor[UnitOfWork]().collect[List]().map { l =>

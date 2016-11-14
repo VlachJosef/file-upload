@@ -49,10 +49,6 @@ class GetEnvelopesByStatusIntegrationSpec extends IntegrationSpec with EnvelopeA
 
         Then("I will receive a 200 Ok response")
         response.status shouldBe OK
-/*
-        val chunks = Iteratee.getChunks[Array[Byte]].map(_.map(x => new String(x)))
-
-        val result = body.run(chunks).futureValue.mkString("")*/
 
         val result = response.body
         countSubstring(result, "OPEN") shouldBe 0

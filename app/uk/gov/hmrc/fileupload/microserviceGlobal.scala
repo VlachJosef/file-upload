@@ -255,7 +255,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   }
 
   object MicroserviceAuditFilter extends AuditFilter with AppName {
-    override def mat = Streams.Implicits.materializer
+    override def mat = materializer
 
     override val auditConnector = MicroserviceAuditConnector
 
@@ -263,13 +263,13 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   }
 
   object MicroserviceLoggingFilter extends LoggingFilter {
-    override def mat = Streams.Implicits.materializer
+    override def mat = materializer
 
     override def controllerNeedsLogging(controllerName: String) = ControllerConfiguration.paramsForController(controllerName).needsLogging
   }
 
   object MicroserviceAuthFilter extends AuthorisationFilter {
-    override def mat = Streams.Implicits.materializer
+    override def mat = materializer
 
     override lazy val authParamsConfig = AuthParamsControllerConfiguration
     override lazy val authConnector = MicroserviceAuthConnector

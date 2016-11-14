@@ -24,12 +24,12 @@ import play.api.libs.json.Json
 import play.api.test.FakeRequest
 import uk.gov.hmrc.fileupload.write.envelope._
 import uk.gov.hmrc.fileupload.write.infrastructure.{CommandAccepted, CommandNotAccepted}
-import uk.gov.hmrc.fileupload.{EnvelopeId, FileId, WithApplicationComponents}
+import uk.gov.hmrc.fileupload.{EnvelopeId, FileId, ApplicationComponents}
 import uk.gov.hmrc.play.test.UnitSpec
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class RoutingControllerSpec extends UnitSpec with WithApplicationComponents with ScalaFutures {
+class RoutingControllerSpec extends UnitSpec with ApplicationComponents with ScalaFutures {
 
   implicit val ec = ExecutionContext.global
   import uk.gov.hmrc.fileupload.Support.StreamImplicits.materializer
