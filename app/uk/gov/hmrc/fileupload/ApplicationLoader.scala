@@ -76,9 +76,9 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   with JsonErrorHandling
   with ErrorAuditingSettings {
 
-  var subscribe: (ActorRef, Class[_]) => Boolean = _
-  var publish: (AnyRef) => Unit = _
-  var withBasicAuth: BasicAuth = _
+  val subscribe: (ActorRef, Class[_]) => Boolean = actorSystem.eventStream.subscribe
+  val publish: (AnyRef) => Unit = actorSystem.eventStream.publish
+  val withBasicAuth: BasicAuth = BasicAuth(basicAuthConfiguration(configuration))
   var eventStore: MongoEventStore = _
 
   implicit val reader = new UnitOfWorkReader(EventSerializer.toEventData)
@@ -108,27 +108,18 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
 
   lazy val db = database.mongoConnector.db
 
-  def onStart(): Unit = {
-    subscribe = actorSystem.eventStream.subscribe
-    publish = actorSystem.eventStream.publish
-
-    // event store
-    if (play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
-      eventStore = new MongoEventStore(db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
-    } else {
-      eventStore = new MongoEventStore(db)
-    }
-
-    withBasicAuth = BasicAuth(basicAuthConfiguration(configuration))
-
-    // notifier
-    actorSystem.actorOf(NotifierActor.props(subscribe, find, sendNotification), "notifierActor")
-    actorSystem.actorOf(StatsActor.props(subscribe, find, sendNotification, saveFileQuarantinedStat,
-      deleteVirusDetectedStat, deleteFileStoredStat), "statsActor")
-
+  // event store
+  if (play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
+    eventStore = new MongoEventStore(db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
+  } else {
+    eventStore = new MongoEventStore(db)
   }
 
-  onStart()
+  // notifier
+  actorSystem.actorOf(NotifierActor.props(subscribe, find, sendNotification), "notifierActor")
+  actorSystem.actorOf(StatsActor.props(subscribe, find, sendNotification, saveFileQuarantinedStat,
+    deleteVirusDetectedStat, deleteFileStoredStat), "statsActor")
+
 
   lazy val auditedHttpExecute = PlayHttp.execute(MicroserviceAuditFilter.auditConnector,
     appName, Some(t => Logger.warn(t.getMessage, t))) _
