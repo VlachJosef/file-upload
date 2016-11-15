@@ -76,13 +76,18 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   with JsonErrorHandling
   with ErrorAuditingSettings {
 
+  implicit val reader = new UnitOfWorkReader(EventSerializer.toEventData)
+  implicit val writer = new UnitOfWorkWriter(EventSerializer.fromEventData)
+
   val subscribe: (ActorRef, Class[_]) => Boolean = actorSystem.eventStream.subscribe
   val publish: (AnyRef) => Unit = actorSystem.eventStream.publish
   val withBasicAuth: BasicAuth = BasicAuth(basicAuthConfiguration(configuration))
-  var eventStore: MongoEventStore = _
-
-  implicit val reader = new UnitOfWorkReader(EventSerializer.toEventData)
-  implicit val writer = new UnitOfWorkWriter(EventSerializer.fromEventData)
+  val eventStore = if (play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
+    new MongoEventStore(db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
+  }
+  else {
+    new MongoEventStore(db)
+  }
 
   def basicAuthConfiguration(config: Configuration): BasicAuthConfiguration = {
     def getUsers(config: Configuration): List[User] = {
@@ -107,13 +112,6 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   lazy val database = new ReactiveMongoConnector(configuration, applicationLifecycle)
 
   lazy val db = database.mongoConnector.db
-
-  // event store
-  if (play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
-    eventStore = new MongoEventStore(db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
-  } else {
-    eventStore = new MongoEventStore(db)
-  }
 
   // notifier
   actorSystem.actorOf(NotifierActor.props(subscribe, find, sendNotification), "notifierActor")
@@ -232,6 +230,8 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   lazy val adminRoutes = new AdminRoutes(httpErrorHandler, new Provider[MetricsController] {
     override def get(): MetricsController = metricsController
   })
+
+  //lazy val testOnlyRoutes = new uk.gov.hrmc.fileupload.testOnlyDoNotUseInAppConf.Routes(httpErrorHandler, testOnlyController, appRoutes)
 
   lazy val router: Router = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
     health.Routes, adminRoutes)

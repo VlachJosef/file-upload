@@ -46,8 +46,7 @@ class TransferController(withBasicAuth: BasicAuth,
 
   def download(envelopeId: uk.gov.hmrc.fileupload.EnvelopeId) = Action.async { implicit request =>
     zipEnvelope(envelopeId) map {
-      case Xor.Right(stream) => Ok.chunked(stream).withHeaders(
-        CONTENT_TYPE -> "application/zip",
+      case Xor.Right(stream) => Ok.chunked(stream).as("application/zip").withHeaders(
         CONTENT_DISPOSITION -> s"""attachment; filename="$envelopeId.zip""""
       )
       case Xor.Left(ZipEnvelopeNotFoundError | EnvelopeNotRoutedYet) =>
