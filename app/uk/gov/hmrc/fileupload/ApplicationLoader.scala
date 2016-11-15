@@ -82,7 +82,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   val subscribe: (ActorRef, Class[_]) => Boolean = actorSystem.eventStream.subscribe
   val publish: (AnyRef) => Unit = actorSystem.eventStream.publish
   val withBasicAuth: BasicAuth = BasicAuth(basicAuthConfiguration(configuration))
-  val eventStore = if (play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
+  val eventStore = if(play.Environment.simple().isProd && configuration.getBoolean("Prod.mongodb.replicaSetInUse").getOrElse(true)) {
     new MongoEventStore(db, writeConcern = commands.WriteConcern.ReplicaAcknowledged(n = 2, timeout = 5000, journaled = true))
   }
   else {
@@ -231,10 +231,12 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
     override def get(): MetricsController = metricsController
   })
 
-  //lazy val testOnlyRoutes = new uk.gov.hrmc.fileupload.testOnlyDoNotUseInAppConf.Routes(httpErrorHandler, testOnlyController, appRoutes)
-
-  lazy val router: Router = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
+  lazy val prodRoutes = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
     health.Routes, adminRoutes)
+
+  lazy val testRoutes = new testOnlyDoNotUseInAppConf.Routes(httpErrorHandler, testOnlyController, prodRoutes)
+
+  lazy val router: Router = if(System.getProperty("application.router") == "testOnlyDoNotUseInAppConf.Routes" ) testRoutes else prodRoutes
 
 
   object ControllerConfiguration extends ControllerConfig {
