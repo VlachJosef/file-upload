@@ -43,6 +43,7 @@ import uk.gov.hmrc.fileupload.read.file.{Service => FileService}
 import uk.gov.hmrc.fileupload.read.notifier.{NotifierActor, NotifierRepository}
 import uk.gov.hmrc.fileupload.read.stats.{Stats, StatsActor}
 import uk.gov.hmrc.fileupload.routing.{Routes => RoutingRoutes}
+import uk.gov.hmrc.fileupload.manualdihealth.{Routes => HealthRoutes}
 import uk.gov.hmrc.fileupload.testonly.TestOnlyController
 import uk.gov.hmrc.fileupload.transfer.{Routes => TransferRoutes}
 import uk.gov.hmrc.fileupload.write.envelope._
@@ -55,6 +56,7 @@ import uk.gov.hmrc.play.auth.controllers.AuthParamsControllerConfig
 import uk.gov.hmrc.play.auth.microservice.filters.AuthorisationFilter
 import uk.gov.hmrc.play.config.{AppName, ControllerConfig}
 import uk.gov.hmrc.play.graphite.{GraphiteConfig, GraphiteMetricsImpl}
+import uk.gov.hmrc.play.health.AdminController
 import uk.gov.hmrc.play.http.logging.filters.LoggingFilter
 import uk.gov.hmrc.play.microservice.bootstrap.Routing.RemovingOfTrailingSlashes
 import uk.gov.hmrc.play.microservice.bootstrap.{JsonErrorHandling, MicroserviceFilters}
@@ -208,6 +210,10 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
     new RoutingController(envelopeCommandHandler)
   }
 
+  lazy val healthRoutes = new HealthRoutes(httpErrorHandler, new Provider[AdminController] {
+    override def get() = new AdminController(configuration)
+  })
+
   lazy val appRoutes = new AppRoutes(httpErrorHandler, new Provider[EnvelopeController] {
     override def get(): EnvelopeController = envelopeController
   },
@@ -232,7 +238,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   })
 
   lazy val prodRoutes = new Routes(httpErrorHandler, appRoutes, transferRoutes, routingRoutes,
-    health.Routes, adminRoutes)
+    healthRoutes, adminRoutes)
 
   lazy val testRoutes = new testOnlyDoNotUseInAppConf.Routes(httpErrorHandler, testOnlyController, prodRoutes)
 
