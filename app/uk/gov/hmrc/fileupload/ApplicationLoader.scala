@@ -236,7 +236,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
 
   lazy val testRoutes = new testOnlyDoNotUseInAppConf.Routes(httpErrorHandler, testOnlyController, prodRoutes)
 
-  lazy val router: Router = if(System.getProperty("application.router") == "testOnlyDoNotUseInAppConf.Routes" ) testRoutes else prodRoutes
+  lazy val router: Router = if(configuration.getString("application.router").get == "testOnlyDoNotUseInAppConf.Routes" ) testRoutes else prodRoutes
 
 
   object ControllerConfiguration extends ControllerConfig {
