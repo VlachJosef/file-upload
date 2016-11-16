@@ -16,7 +16,9 @@
 
 package uk.gov.hmrc.fileupload.controllers.transfer
 
+import akka.stream.scaladsl.Source
 import cats.data.Xor
+import play.api.libs.streams.Streams
 import play.api.mvc.{Action, Controller}
 import uk.gov.hmrc.fileupload.EnvelopeId
 import uk.gov.hmrc.fileupload.controllers.ExceptionHandler
@@ -46,9 +48,10 @@ class TransferController(withBasicAuth: BasicAuth,
 
   def download(envelopeId: uk.gov.hmrc.fileupload.EnvelopeId) = Action.async { implicit request =>
     zipEnvelope(envelopeId) map {
-      case Xor.Right(stream) => Ok.chunked(stream).as("application/zip").withHeaders(
-        CONTENT_DISPOSITION -> s"""attachment; filename="$envelopeId.zip""""
-      )
+      case Xor.Right(stream) => val source = Source.fromPublisher(Streams.enumeratorToPublisher(stream))
+        Ok.chunked(source).as("application/zip").withHeaders(
+          CONTENT_DISPOSITION -> s"""attachment; filename="$envelopeId.zip""""
+        )
       case Xor.Left(ZipEnvelopeNotFoundError | EnvelopeNotRoutedYet) =>
         ExceptionHandler(404, s"Envelope with id: $envelopeId not found")
       case Xor.Left(ZipProcessingError(message)) =>

@@ -16,7 +16,11 @@
 
 package uk.gov.hmrc.fileupload.controllers
 
+import akka.stream.scaladsl.Source
+import akka.util.ByteString
 import cats.data.Xor
+import play.api.http.HttpEntity
+import play.api.libs.streams.Streams
 import play.api.mvc._
 import uk.gov.hmrc.fileupload._
 import uk.gov.hmrc.fileupload.infrastructure.BasicAuth
@@ -52,12 +56,12 @@ class FileController(withBasicAuth: BasicAuth,
       withValidEnvelope(id) { envelope =>
         retrieveFile(envelope, fileId).map {
           case Xor.Right(FileFound(filename, length, data)) =>
-            Ok.feed(data).withHeaders(
-              CONTENT_LENGTH -> s"${length}",
-              CONTENT_DISPOSITION -> s"""attachment; filename="${filename.getOrElse("data")}"""",
-              CONTENT_TYPE -> "application/octet-stream"
-            )
-            case Xor.Left(GetFileNotFoundError) =>
+            val byteArray = Source.fromPublisher(Streams.enumeratorToPublisher(data.map(ByteString.fromArray)))
+            Ok.sendEntity(HttpEntity.Streamed(byteArray, Some(length), Some("application/octet-stream")))
+              .withHeaders(CONTENT_DISPOSITION -> s"""attachment; filename="${filename.getOrElse("data")}"""",
+                CONTENT_LENGTH -> s"$length",
+                CONTENT_TYPE -> "application/octet-stream")
+          case Xor.Left(GetFileNotFoundError) =>
             ExceptionHandler(NOT_FOUND, s"File with id: $fileId not found in envelope: $id")
         }
       }
