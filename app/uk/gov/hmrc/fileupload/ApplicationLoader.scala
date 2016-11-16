@@ -202,8 +202,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   }
 
   lazy val testOnlyController = {
-    val removeAllEnvelopes = () => envelopeRepository.removeAll()
-    new TestOnlyController(removeAllEnvelopes, eventStore, statsRepository)
+    new TestOnlyController(recreateCollections = List(eventStore.recreate, envelopeRepository.recreate, fileRepository.recreate, statsRepository.recreate))
   }
 
   lazy val routingController = {
