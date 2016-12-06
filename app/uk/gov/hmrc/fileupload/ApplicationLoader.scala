@@ -112,8 +112,10 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
   }
 
   lazy val database = new ReactiveMongoConnector(configuration, applicationLifecycle)
+  lazy val mongoScalaConnector = new MongoScalaConnector(configuration, environment.mode)
 
   lazy val db = database.mongoConnector.db
+  lazy val mongoDb = mongoScalaConnector.mongoDatabase
 
   // notifier
   actorSystem.actorOf(NotifierActor.props(subscribe, find, sendNotification), "notifierActor")
@@ -135,7 +137,7 @@ class ApplicationModule(context: Context) extends BuiltInComponentsFromContext(c
 
   lazy val sendNotification = NotifierRepository.notify(auditedHttpExecute, wsClient) _
 
-  lazy val fileRepository = uk.gov.hmrc.fileupload.read.file.Repository.apply(db)
+  lazy val fileRepository = uk.gov.hmrc.fileupload.read.file.Repository.apply(db, mongoDb)
   val iterateeForUpload = fileRepository.iterateeForUpload _
   val getFileFromRepo = fileRepository.retrieveFile _
   lazy val retrieveFile = FileService.retrieveFile(getFileFromRepo) _

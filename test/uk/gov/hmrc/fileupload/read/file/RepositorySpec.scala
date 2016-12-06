@@ -16,12 +16,14 @@
 
 package uk.gov.hmrc.fileupload.read.file
 
+import akka.util.ByteString
 import org.joda.time.{DateTime, Duration}
 import org.scalatest.BeforeAndAfterEach
 import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.time.{Millis, Seconds, Span}
 import play.api.libs.iteratee.{Enumerator, Iteratee}
 import play.api.libs.json.JsString
+import play.api.libs.streams.Streams
 import reactivemongo.bson.BSONDocument
 import reactivemongo.json.ImplicitBSONHandlers._
 import uk.gov.hmrc.fileupload._
@@ -40,13 +42,13 @@ class RepositorySpec extends UnitSpec with MongoSpecSupport with ScalaFutures wi
 	"repository" should {
 		"retrieve a file in a envelope" in {
 			val text = "I only exists to be stored in mongo :<"
-			val contents = Enumerator[ByteStream](text.getBytes)
+			val contents = Enumerator[ByteString](ByteString.fromArray(text.getBytes))
 
 			val envelopeId = Support.envelope._id
 			val fileId = FileId()
 			val fileRefId = FileRefId()
 
-			val sink = repository.iterateeForUpload(envelopeId, fileId, fileRefId)
+			val sink = Streams.accumulatorToIteratee(repository.accumulatorForUpload(envelopeId, fileId, fileRefId))
 			val fsId = contents.run[Future[JSONReadFile]](sink).futureValue.id match {
 				case JsString(v) => FileId(v)
 				case _ => fail("expected JsString here")
@@ -74,13 +76,13 @@ class RepositorySpec extends UnitSpec with MongoSpecSupport with ScalaFutures wi
 
 	def insertAnyFile(): String = {
 		val text = "I only exists to be stored in mongo :<"
-		val contents = Enumerator[ByteStream](text.getBytes)
+		val contents = Enumerator[ByteString](ByteString.fromArray(text.getBytes))
 
 		val envelopeId = Support.envelope._id
 		val fileId = FileId()
 		val fileRefId = FileRefId()
 
-		val sink = repository.iterateeForUpload(envelopeId, fileId, fileRefId)
+		val sink = Streams.accumulatorToIteratee(repository.accumulatorForUpload(envelopeId, fileId, fileRefId))
 		contents.run[Future[JSONReadFile]](sink).futureValue.id match {
 			case JsString(v) => v
 			case _ => fail("expected JsString here")

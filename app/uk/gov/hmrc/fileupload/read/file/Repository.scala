@@ -16,9 +16,18 @@
 
 package uk.gov.hmrc.fileupload.read.file
 
+import java.util.UUID
+
+import akka.stream.scaladsl.Sink
+import akka.util.ByteString
+import com.mongodb.client.gridfs.model.GridFSUploadOptions
+import org.bson.{BsonString, Document}
+import org.mongodb.scala.MongoDatabase
+import org.mongodb.scala.gridfs.{GridFSBucket, GridFSUploadStream}
 import play.api.Logger
 import play.api.libs.iteratee.{Enumerator, Iteratee}
 import play.api.libs.json.Json
+import play.api.libs.streams.{Accumulator, Streams}
 import play.modules.reactivemongo.GridFSController._
 import play.modules.reactivemongo.JSONFileToSave
 import reactivemongo.api.gridfs.GridFS
@@ -29,13 +38,13 @@ import reactivemongo.bson.BSONDocument
 import reactivemongo.json._
 import uk.gov.hmrc.fileupload._
 
-import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
 
 object Repository {
-  def apply(mongo: () => DB with DBMetaCommands)(implicit ec: ExecutionContext): Repository = new Repository(mongo)
+  def apply(mongo: () => DB with DBMetaCommands, mongoDatabase: MongoDatabase)(implicit ec: ExecutionContext): Repository = new Repository(mongo, mongoDatabase)
 
   sealed trait RetrieveFileError
 
@@ -45,11 +54,12 @@ object Repository {
 
 case class FileData(length: Long = 0, data: Enumerator[Array[Byte]] = null)
 
-class Repository(mongo: () => DB with DBMetaCommands)(implicit ec: ExecutionContext) {
+class Repository(mongo: () => DB with DBMetaCommands, mongoDatabase: MongoDatabase)(implicit ec: ExecutionContext) {
 
   import reactivemongo.json.collection._
 
   lazy val gfs: JSONGridFS = GridFS[JSONSerializationPack.type](mongo(), "envelopes")
+  lazy val gridFsBucket = GridFSBucket(mongoDatabase, "envelopes")
 
   ensureIndex()
 
@@ -63,6 +73,20 @@ class Repository(mongo: () => DB with DBMetaCommands)(implicit ec: ExecutionCont
                        (implicit ec: ExecutionContext): Iteratee[ByteStream, Future[JSONReadFile]] = {
     gfs.iteratee(JSONFileToSave(id = Json.toJson(fileRefId.value), filename = None, metadata = Json.obj("envelopeId" -> envelopeId, "fileId" -> fileId)))
   }
+
+  def accumulatorForUpload(envelopeId: EnvelopeId, fileId: FileId, fileRefId: FileRefId)
+                          (implicit ec: ExecutionContext): Accumulator[ByteString, Future[JSONReadFile]] = {
+    val id = new BsonString(fileRefId.value)
+    val filename = UUID.randomUUID().toString
+    val metadata = Document.parse(Json.obj("envelopeId" -> envelopeId, "fileId" -> fileId).toString())
+    val opts = new GridFSUploadOptions().metadata(metadata)
+    val uploadStream = gridFsBucket.openUploadStream(id, filename, opts)
+
+    Streams.iterateeToAccumulator()
+
+    ???
+  }
+
 
   def retrieveFile(_id: FileRefId)(implicit ec: ExecutionContext): Future[Option[FileData]] = {
     gfs.find[BSONDocument, JSONReadFile](BSONDocument("_id" -> _id.value)).headOption.map { file =>
